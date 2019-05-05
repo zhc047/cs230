@@ -1,5 +1,7 @@
 import tensorflow as tf
 import stylegan.dnnlib as dnnlib
+import sys
+sys.modules["dnnlib"] = dnnlib
 import stylegan.dnnlib.tflib as tflib
 import stylegan.config as config
 import pickle
@@ -8,7 +10,7 @@ import PIL as PIL
 import os
 from  keras.preprocessing.image import load_img
 from keras.applications.vgg16 import preprocess_input
-from tensorflow.contrib.slim.nets import vgg
+import vgg
 # from tensorflow.contrib.slim.preprocessing.vgg_preprocessing import preprocess_image
 slim = tf.contrib.slim
 
@@ -34,11 +36,12 @@ W = tf.transpose(W, perm=[0, 2, 1])
 
 generated_img = Gs.components.synthesis.get_output_for(W)
 generated_img = tf.resize_images(generated_img, size=[224,224])
-generated_img = slim.preprocessing.vgg_preprocessing.preprocess_image(generated_img)
+# generated_img = slim.preprocessing.vgg_preprocessing.preprocess_image(generated_img)
 
 real_img = load_img('example.png', target_size=[224,224])
-real_img = preprocess_input(real_img)
+# real_img = preprocess_input(real_img)
 real_img = tf.constant(real_img)
+real_img = tf.expand_dims(real_img, 0)
 
 _, end_points_generated = vgg.vgg_16(generated_img)
 _, end_points_real = vgg.vgg_16(real_img)
