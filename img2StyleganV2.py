@@ -35,7 +35,7 @@ W = tf.reshape(tf.tile(W, [num_styles]), [1, dlatent_size, num_styles])
 W = tf.transpose(W, perm=[0, 2, 1])
 
 generated_img = Gs.components.synthesis.get_output_for(W)
-generated_img = tf.resize_images(generated_img, size=[224,224])
+generated_img = tf.image.resize_images(generated_img, size=[224,224])
 # generated_img = slim.preprocessing.vgg_preprocessing.preprocess_image(generated_img)
 
 real_img = load_img('example.png', target_size=[224,224])

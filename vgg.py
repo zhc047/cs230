@@ -149,7 +149,7 @@ def vgg_16(inputs,
            scope='vgg_16',
            fc_conv_padding='VALID',
            global_pool=False,
-           reuse=True):
+           reuse=tf.AUTO_REUSE):
   """Oxford Net VGG 16-Layers version D Example.
 
   Note: All the fully_connected layers have been transformed to conv2d layers.
