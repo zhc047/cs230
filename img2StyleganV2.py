@@ -12,13 +12,12 @@ import os
 from  keras.preprocessing.image import load_img
 from keras.applications.vgg16 import preprocess_input
 import vgg
-# from tensorflow.contrib.slim.preprocessing.vgg_preprocessing import preprocess_image
 slim = tf.contrib.slim
 
 num_styles = 18
 dlatent_size = 512
 lamda = 1
-num_epochs = 100
+num_epochs = 2000
 
 # Initialize TensorFlow.
 tflib.init_tf()
@@ -36,26 +35,24 @@ W_np = np.reshape(np.tile(W_np, [num_styles]), [1, dlatent_size, num_styles])
 W_np = np.transpose(W_np, [0, 2, 1])
 W = tf.get_variable('W', initializer=W_np)
 
-generated_img = Gs.components.synthesis.get_output_for(W)
-# generated_img = tf.transpose(generated_img, perm=[0, 3, 2, 1])
-generated_img = big_generated_img = convert_images_to_uint8(generated_img, nchw_to_nhwc=True)
-generated_img = tf.image.resize_images(generated_img, size=[224,224])
-generated_img = preprocess_input(generated_img)
-# generated_img = slim.preprocessing.vgg_preprocessing.preprocess_image(generated_img)
+# generated_img = Gs.components.synthesis.get_output_for(W, use_noise=False, randomize_noise=False, blur_filter=None)
+generated_img = Gs.components.synthesis.get_output_for(W, randomize_noise=False)
+generated_img = tf.transpose(generated_img, perm=[0, 2, 3, 1])
 
 real_img = load_img('example.png')
-real_img = tf.constant(real_img)
-real_img = big_real_img = tf.expand_dims(real_img, 0)
-# big_real_img = tf.cast(big_real_img, tf.float32)
-real_img = tf.image.resize_images(real_img, size=[224, 224])
-real_img = preprocess_input(real_img)
+real_img = np.expand_dims(real_img, 0)
+real_img = preprocess_input(real_img, mode='tf')
+real_img = (real_img + 1) * (255 / 2)
+generated_img =  (generated_img + 1) * (255 / 2)
+loss = lamda * tf.norm(real_img - generated_img)
 
+# generated_img = tf.image.resize_images(generated_img, size=[224,224])
+# real_img = tf.image.resize_images(real_img, size=[224, 224])
 # _, end_points_real = vgg.vgg_16(real_img)
 # _, end_points_generated = vgg.vgg_16(generated_img)
-#
-# layers = ['vgg_16/conv1/conv1_1', 'vgg_16/conv1/conv1_2', 'vgg_16/conv3/conv3_2', 'vgg_16/conv4/conv4_2']
 
-loss = pix_loss = lamda * tf.norm(big_real_img - big_generated_img)
+# loss = 0
+# layers = ['vgg_16/conv1/conv1_1', 'vgg_16/conv1/conv1_2', 'vgg_16/conv3/conv3_2', 'vgg_16/conv4/conv4_2']
 # for layer in layers:
 #     activation_generated = end_points_generated[layer]
 #     activation_real = end_points_real[layer]
@@ -73,15 +70,14 @@ with tf.Session() as sess:
     sess.run(init_op)
     # restore(sess)
     for i in range(num_epochs):
-        _, loss_val, pix_loss_val = sess.run([train_op, loss, pix_loss])
+        _, loss_val = sess.run([train_op, loss])
         print("epoch " + str(i) + ": " + str(loss_val) + "\n")
-        # print(pix_loss_val)
 
-    optimal_img = Gs.components.synthesis.get_output_for(W)
+    # optimal_img = Gs.components.synthesis.get_output_for(W, use_noise=False, randomize_noise=False, blur_filter=None)
+    optimal_img = Gs.components.synthesis.get_output_for(W, use_noise=False)
     optimal_img = convert_images_to_uint8(optimal_img, nchw_to_nhwc=True)
     optimal_img = sess.run(optimal_img)
     print(np.max(optimal_img), np.min(optimal_img))
-    # optimal_img = np.transpose(optimal_img, [0, 3, 2, 1])
 
     os.makedirs(config.result_dir, exist_ok=True)
     png_filename = os.path.join(config.result_dir, 'optimal.png')
