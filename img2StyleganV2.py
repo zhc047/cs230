@@ -22,13 +22,13 @@ def write_summary(value, tag, global_step, summary_writer):
     summary = tf.Summary()
     summary.value.add(tag=tag, simple_value=value)
     summary_writer.add_summary(summary, global_step)
-summary_epoch = 100
+summary_epoch = 1
 
 num_styles = 18
 dlatent_size = 512
 lamda = 1
-num_epochs = 2000
-learning_rate = 0.01
+num_epochs = 0
+learning_rate = 1e-6
 
 # Initialize TensorFlow.
 tflib.init_tf()
@@ -44,9 +44,17 @@ Gs.print_layers()
 W_np = Gs.get_var('dlatent_avg')
 W_np = np.reshape(np.tile(W_np, [num_styles]), [1, dlatent_size, num_styles])
 W_np = np.transpose(W_np, [0, 2, 1])
-W = tf.get_variable('W', initializer=W_np)
-tf.summary.histogram('W', W)
-
+W = tf.get_variable('optimal_dlatent', initializer=W_np)
+tf.summary.histogram('optimal_dlatent', W)
+# Z = np.random.randn(1, 512)
+# W = Gs.components.mapping.get_output_for(tf.get_variable('Z', initializer=Z), None)
+# Apply truncation trick.
+# with tf.variable_scope('Truncation'):
+#     layer_idx = np.arange(num_styles)[np.newaxis, :, np.newaxis]
+#     ones = np.ones(layer_idx.shape, dtype=np.float32)
+#     coefs = tf.where(layer_idx < 8, 0.7 * ones, ones)
+#     W = tflib.lerp(Gs.get_var('dlatent_avg'), W, coefs)
+# tf.summary.histogram('W', W)
 generated_img = Gs.components.synthesis.get_output_for(W, randomize_noise=False, structure='linear', is_validation=True)
 generated_img = tf.transpose(generated_img, perm=[0, 2, 3, 1])
 tf.summary.histogram('float_imgs/generated', generated_img)
@@ -76,7 +84,7 @@ loss = lamda * tf.norm(real_img - generated_img)
 # optim = tf.train.AdamOptimizer(learning_rate=0.01)
 # train_op = optim.minimize(loss, var_list=[W])
 train_op = tf.contrib.layers.optimize_loss(
-    loss, tf.train.get_global_step(), learning_rate, 'Adam', summaries=['gradients']
+    loss, tf.train.get_global_step(), learning_rate, 'SGD', summaries=['gradients'], variables=[W]
 )
 
 merge_summaries = tf.summary.merge_all()
@@ -92,6 +100,9 @@ with tf.Session() as sess:
     #           )
     sess.run(init_op)
     # restore(sess)
+    _, summeries = sess.run([loss, merge_summaries])
+    summary_writer.add_summary(summeries, 0)
+    i = 0
     for i in range(num_epochs):
         input_feed = [train_op, loss]
         if i % summary_epoch == 0:
@@ -102,7 +113,7 @@ with tf.Session() as sess:
         print("epoch " + str(i) + ": " + str(loss_val) + "\n")
         write_summary(loss_val, 'loss', i, summary_writer)
         if i % summary_epoch == 0:
-            summary_writer.add_summary(outputs[2], i)
+            summary_writer.add_summary(outputs[2], i+1)
 
     # optimal_img = Gs.components.synthesis.get_output_for(W, use_noise=False, randomize_noise=False, blur_filter=None)
     optimal_img = Gs.components.synthesis.get_output_for(W, use_noise=False)
