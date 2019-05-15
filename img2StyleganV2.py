@@ -14,10 +14,21 @@ from keras.applications.vgg16 import preprocess_input
 import vgg
 slim = tf.contrib.slim
 
+# Tensorboard stuff
+import time
+experiment_dir = './experiments/' +  str(int(time.time()))
+os.mkdir(experiment_dir)
+def write_summary(value, tag, global_step, summary_writer):
+    summary = tf.Summary()
+    summary.value.add(tag=tag, simple_value=value)
+    summary_writer.add_summary(summary, global_step)
+summary_epoch = 100
+
 num_styles = 18
 dlatent_size = 512
 lamda = 1
 num_epochs = 2000
+learning_rate = 0.01
 
 # Initialize TensorFlow.
 tflib.init_tf()
@@ -34,16 +45,20 @@ W_np = Gs.get_var('dlatent_avg')
 W_np = np.reshape(np.tile(W_np, [num_styles]), [1, dlatent_size, num_styles])
 W_np = np.transpose(W_np, [0, 2, 1])
 W = tf.get_variable('W', initializer=W_np)
+tf.summary.histogram('W', W)
 
-# generated_img = Gs.components.synthesis.get_output_for(W, use_noise=False, randomize_noise=False, blur_filter=None)
-generated_img = Gs.components.synthesis.get_output_for(W, randomize_noise=False)
+generated_img = Gs.components.synthesis.get_output_for(W, randomize_noise=False, structure='linear', is_validation=True)
 generated_img = tf.transpose(generated_img, perm=[0, 2, 3, 1])
+tf.summary.histogram('float_imgs/generated', generated_img)
 
 real_img = load_img('example.png')
 real_img = np.expand_dims(real_img, 0)
 real_img = preprocess_input(real_img, mode='tf')
+tf.summary.histogram('float_imgs/real', real_img)
 real_img = (real_img + 1) * (255 / 2)
+tf.summary.histogram('int_imgs/real', real_img)
 generated_img =  (generated_img + 1) * (255 / 2)
+tf.summary.histogram('int_imgs/genereated', generated_img)
 loss = lamda * tf.norm(real_img - generated_img)
 
 # generated_img = tf.image.resize_images(generated_img, size=[224,224])
@@ -58,10 +73,18 @@ loss = lamda * tf.norm(real_img - generated_img)
 #     activation_real = end_points_real[layer]
 #     loss += tf.norm(activation_generated - activation_real)
 
-optim = tf.train.AdamOptimizer(learning_rate=0.01)
-train_op = optim.minimize(loss, var_list=[W])
+# optim = tf.train.AdamOptimizer(learning_rate=0.01)
+# train_op = optim.minimize(loss, var_list=[W])
+train_op = tf.contrib.layers.optimize_loss(
+    loss, tf.train.get_global_step(), learning_rate, 'Adam', summaries=['gradients']
+)
+
+merge_summaries = tf.summary.merge_all()
 
 with tf.Session() as sess:
+    # Create summary writter for tensorboard
+    summary_writer = tf.summary.FileWriter(experiment_dir, sess.graph)
+
     init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
     # restore = slim.assign_from_checkpoint_fn(
     #            'vgg_16.ckpt',
@@ -70,14 +93,25 @@ with tf.Session() as sess:
     sess.run(init_op)
     # restore(sess)
     for i in range(num_epochs):
-        _, loss_val = sess.run([train_op, loss])
+        input_feed = [train_op, loss]
+        if i % summary_epoch == 0:
+            input_feed.append(merge_summaries)
+        outputs = sess.run(input_feed)
+        loss_val = outputs[1]
+
         print("epoch " + str(i) + ": " + str(loss_val) + "\n")
+        write_summary(loss_val, 'loss', i, summary_writer)
+        if i % summary_epoch == 0:
+            summary_writer.add_summary(outputs[2], i)
 
     # optimal_img = Gs.components.synthesis.get_output_for(W, use_noise=False, randomize_noise=False, blur_filter=None)
     optimal_img = Gs.components.synthesis.get_output_for(W, use_noise=False)
+    tf.summary.histogram('output_img/float', optimal_img)
     optimal_img = convert_images_to_uint8(optimal_img, nchw_to_nhwc=True)
-    optimal_img = sess.run(optimal_img)
+    tf.summary.histogram('output_img/int', optimal_img)
+    optimal_img, summaries = sess.run([optimal_img, merge_summaries])
     print(np.max(optimal_img), np.min(optimal_img))
+    summary_writer.add_summary(summaries, i)
 
     os.makedirs(config.result_dir, exist_ok=True)
     png_filename = os.path.join(config.result_dir, 'optimal.png')
